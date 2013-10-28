@@ -14,6 +14,7 @@ from itsbroken.transaction import Transaction
 from itsbroken.testing import DB_NAME, POOL, USER, CONTEXT
 
 from test_base import TestBase, load_json
+import settings
 
 
 def mock_inventory_api(mock=None, data=None):
@@ -54,18 +55,32 @@ class TestProduct(TestBase):
         with Transaction().start(DB_NAME, USER, CONTEXT) as txn:
             self.setup_defaults(txn)
             context = deepcopy(CONTEXT)
-            context.update({'magento_instance': self.instance_id1})
+            context.update({
+                'magento_instance': self.instance_id1,
+                'magento_website': self.website_id1
+            })
 
             category_obj = POOL.get('product.category')
             magento_category_obj = POOL.get(
                 'magento.instance.product_category'
+            )
+            website_obj = POOL.get('magento.instance.website')
+
+            website = website_obj.browse(
+                txn.cursor, txn.user, self.website_id1, txn.context
             )
 
             categories_before_import = category_obj.search(
                 txn.cursor, txn.user, [], count=True
             )
 
-            category_tree = load_json('categories', 'category_tree')
+            if settings.MOCK:
+                category_tree = load_json('categories', 'category_tree')
+            else:
+                with magento.Category(*settings.ARGS) as category_api:
+                    category_tree = category_api.tree(
+                        website.magento_root_category_id
+                    )
 
             category_obj.create_tree_using_magento_data(
                 txn.cursor, txn.user, category_tree, context
@@ -86,10 +101,13 @@ class TestProduct(TestBase):
             root_category = category_obj.browse(
                 txn.cursor, txn.user, root_category_id, context
             )
-            self.assertEqual(root_category.magento_ids[0].magento_id, 1)
+            self.assertEqual(
+                root_category.magento_ids[0].magento_id,
+                website.magento_root_category_id
+            )
 
-            self.assertEqual(len(root_category.child_id), 1)
-            self.assertEqual(len(root_category.child_id[0].child_id), 4)
+            self.assertTrue(len(root_category.child_id) > 0)
+            self.assertTrue(len(root_category.child_id[0].child_id) > 0)
 
             # Make sure the categs created only in instance1 and not in
             # instance2

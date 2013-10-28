@@ -7,7 +7,6 @@
 """
 import os
 import json
-
 import unittest
 
 from itsbroken.testing import POOL, install_module
